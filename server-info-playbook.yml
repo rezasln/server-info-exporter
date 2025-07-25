@@ -1,0 +1,60 @@
+---
+- name: Gather disk, memory, hostname, and failed login information
+  hosts: all
+  become: yes
+  become_method: sudo
+  gather_facts: no
+  serial: 1  # <--- ensures no file overwrite conflict
+  vars:
+    ansible_shell_executable: /bin/bash
+    ansible_become_timeout: 30
+
+  tasks:
+    - name: Get hostname
+      shell: "hostname"
+      register: server_hostname
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Get disk usage
+      shell: "df -lh --total 2>/dev/null"
+      register: disk_usage
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Get memory and swap usage
+      shell: "free -h 2>/dev/null"
+      register: memory_usage
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Get failed login attempts
+      shell: "lastb 2>/dev/null || echo 'lastb not available'"
+      register: failed_logins
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Save gathered information as a local fact (text format)
+      set_fact:
+        gathered_info: |
+          === Server: {{ inventory_hostname }} ===
+          Hostname: {{ server_hostname.stdout | default('Unknown') }}
+
+          Disk Usage:
+          {{ disk_usage.stdout | default('Not available') }}
+
+          Memory and Swap Usage:
+          {{ memory_usage.stdout | default('Not available') }}
+
+          Failed Logins:
+          {{ failed_logins.stdout | default('Not available') }}
+          === End of {{ inventory_hostname }} ===
+
+    - name: Append server info to central file
+      local_action:
+        module: blockinfile
+        path: "./servers_info.txt"
+        block: "{{ gathered_info }}"
+        marker: ""  # Keep your format exactly
+      delegate_to: localhost
+
